@@ -305,7 +305,7 @@
 
 @synthesize socket, url, host, heartbeat;
 @synthesize connectFrameHeaders;
-@synthesize connectionCompletionHandler, disconnectedHandler, receiptHandler, errorHandler;
+@synthesize connectionCompletionHandler, disconnectedHandler, receiptHandler, errorHandler, defaultMessageHandler;
 @synthesize subscriptions;
 @synthesize pinger, ponger;
 @synthesize delegate;
@@ -512,22 +512,26 @@ CFAbsoluteTime serverActivity;
         if (self.connectionCompletionHandler) {
             self.connectionCompletionHandler(frame, nil);
         }
-        // MESSAGE
+
+    // MESSAGE
     } else if([kCommandMessage isEqual:frame.command]) {
         STOMPMessageHandler handler = self.subscriptions[frame.headers[kHeaderSubscription]];
-        if (handler) {
-            STOMPMessage *message = [STOMPMessage STOMPMessageFromFrame:frame
-                                                                 client:self];
-            handler(message);
-        } else {
-            //TODO default handler
+        if (!handler) {
+            handler = defaultMessageHandler;
         }
-        // RECEIPT
+
+        if (handler) {
+            STOMPMessage *message = [STOMPMessage STOMPMessageFromFrame:frame client:self];
+            handler(message);
+        }
+
+    // RECEIPT
     } else if([kCommandReceipt isEqual:frame.command]) {
         if (self.receiptHandler) {
             self.receiptHandler(frame);
         }
-        // ERROR
+
+    // ERROR
     } else if([kCommandError isEqual:frame.command]) {
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit" code:1 userInfo:@{@"frame": frame}];
         // ERROR coming after the CONNECT frame
@@ -542,7 +546,7 @@ CFAbsoluteTime serverActivity;
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit"
                                                     code:2
                                                 userInfo:@{@"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command],
-                                                           @"frame": frame}];
+                                                           @"frame": frame ? frame : @"<nil>"}];
         if (self.errorHandler) {
             self.errorHandler(error);
         }

@@ -92,7 +92,9 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 @interface STOMPClient : NSObject
 
 @property (nonatomic, copy) STOMPFrameHandler receiptHandler;
+@property (nonatomic, copy) STOMPMessageHandler defaultMessageHandler;
 @property (nonatomic, copy) void (^errorHandler)(NSError *error);
+
 @property (nonatomic, assign) BOOL connected;
 @property (nonatomic, readonly) BOOL heartbeatActivated;
 @property (nonatomic, weak) NSObject<STOMPClientDelegate> *delegate;
