@@ -588,9 +588,12 @@ CFAbsoluteTime serverActivity;
 // TEXT FRAMES!
 // This is where all the goodness should arrive
 - (void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString *)string {
-    serverActivity = CFAbsoluteTimeGetCurrent();
-    STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:[string dataUsingEncoding:NSUTF8StringEncoding]];
-    [self receivedFrame:frame];
+    NSString *cleanedString = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanedString && ![cleanedString isEqualToString:@""]) {
+        serverActivity = CFAbsoluteTimeGetCurrent();
+        STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:[cleanedString dataUsingEncoding:NSUTF8StringEncoding]];
+        [self receivedFrame:frame];
+    }
 }
 
 - (void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
