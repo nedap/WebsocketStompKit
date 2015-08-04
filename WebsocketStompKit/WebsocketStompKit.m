@@ -603,7 +603,7 @@ CFAbsoluteTime serverActivity;
     } else if (self.connected) {
         if (self.disconnectedHandler) {
             self.disconnectedHandler(error);
-        } else if (self.errorHandler) {
+        } else if (self.errorHandler && error) {
             self.errorHandler(error);
         }
     }
