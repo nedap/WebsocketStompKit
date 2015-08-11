@@ -137,7 +137,7 @@
             for (int i=0; i < [line length]; i++) {
                 unichar c = [line characterAtIndex:i];
                 if (c != '\x00') {
-                    [body appendString:[NSString stringWithFormat:@"%c", c]];
+                    [body appendString:[NSString stringWithFormat:@"%C", c]];
                 }
             }
         } else {
@@ -305,7 +305,7 @@
 
 @synthesize socket, url, host, heartbeat;
 @synthesize connectFrameHeaders;
-@synthesize connectionCompletionHandler, disconnectedHandler, receiptHandler, errorHandler;
+@synthesize connectionCompletionHandler, disconnectedHandler, receiptHandler, errorHandler, defaultMessageHandler;
 @synthesize subscriptions;
 @synthesize pinger, ponger;
 @synthesize delegate;
@@ -369,7 +369,8 @@ CFAbsoluteTime serverActivity;
     NSMutableDictionary *msgHeaders = [NSMutableDictionary dictionaryWithDictionary:headers];
     msgHeaders[kHeaderDestination] = destination;
     if (body) {
-        msgHeaders[kHeaderContentLength] = [NSNumber numberWithLong:[body length]];
+        NSData *bodyData = [body dataUsingEncoding:NSUTF8StringEncoding];
+        msgHeaders[kHeaderContentLength] = [NSNumber numberWithLong:[bodyData length]];
     }
     [self sendFrameWithCommand:kCommandSend
                        headers:msgHeaders
@@ -512,22 +513,26 @@ CFAbsoluteTime serverActivity;
         if (self.connectionCompletionHandler) {
             self.connectionCompletionHandler(frame, nil);
         }
-        // MESSAGE
+
+    // MESSAGE
     } else if([kCommandMessage isEqual:frame.command]) {
         STOMPMessageHandler handler = self.subscriptions[frame.headers[kHeaderSubscription]];
-        if (handler) {
-            STOMPMessage *message = [STOMPMessage STOMPMessageFromFrame:frame
-                                                                 client:self];
-            handler(message);
-        } else {
-            //TODO default handler
+        if (!handler) {
+            handler = defaultMessageHandler;
         }
-        // RECEIPT
+
+        if (handler) {
+            STOMPMessage *message = [STOMPMessage STOMPMessageFromFrame:frame client:self];
+            handler(message);
+        }
+
+    // RECEIPT
     } else if([kCommandReceipt isEqual:frame.command]) {
         if (self.receiptHandler) {
             self.receiptHandler(frame);
         }
-        // ERROR
+
+    // ERROR
     } else if([kCommandError isEqual:frame.command]) {
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit" code:1 userInfo:@{@"frame": frame}];
         // ERROR coming after the CONNECT frame
@@ -542,7 +547,7 @@ CFAbsoluteTime serverActivity;
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit"
                                                     code:2
                                                 userInfo:@{@"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command],
-                                                           @"frame": frame}];
+                                                           @"frame": frame ? frame : @"<nil>"}];
         if (self.errorHandler) {
             self.errorHandler(error);
         }
@@ -584,9 +589,12 @@ CFAbsoluteTime serverActivity;
 // TEXT FRAMES!
 // This is where all the goodness should arrive
 - (void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString *)string {
-    serverActivity = CFAbsoluteTimeGetCurrent();
-    STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:[string dataUsingEncoding:NSUTF8StringEncoding]];
-    [self receivedFrame:frame];
+    NSString *cleanedString = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanedString && ![cleanedString isEqualToString:@""]) {
+        serverActivity = CFAbsoluteTimeGetCurrent();
+        STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:[cleanedString dataUsingEncoding:NSUTF8StringEncoding]];
+        [self receivedFrame:frame];
+    }
 }
 
 - (void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
@@ -596,7 +604,7 @@ CFAbsoluteTime serverActivity;
     } else if (self.connected) {
         if (self.disconnectedHandler) {
             self.disconnectedHandler(error);
-        } else if (self.errorHandler) {
+        } else if (self.errorHandler && error) {
             self.errorHandler(error);
         }
     }
