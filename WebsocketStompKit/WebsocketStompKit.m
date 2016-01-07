@@ -391,7 +391,7 @@ CFAbsoluteTime serverActivity;
     subHeaders[kHeaderDestination] = destination;
     NSString *identifier = subHeaders[kHeaderID];
     if (!identifier) {
-        identifier = [NSString stringWithFormat:@"sub-%d", idGenerator++];
+        identifier = destination;
         subHeaders[kHeaderID] = identifier;
     }
     self.subscriptions[identifier] = handler;
