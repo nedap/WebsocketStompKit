@@ -134,12 +134,12 @@
     [contents removeObjectAtIndex:0];
     for(NSString *line in contents) {
         if(hasHeaders) {
-            for (int i=0; i < [line length]; i++) {
-                unichar c = [line characterAtIndex:i];
-                if (c != '\x00') {
-                    [body appendString:[NSString stringWithFormat:@"%C", c]];
-                }
+            NSString *cleanLine = [line copy];
+            NSString *lastChar = [cleanLine substringFromIndex:[cleanLine length] - 1];
+            if ([lastChar isEqualToString:@"\0"]) {
+                cleanLine = [cleanLine substringToIndex:[cleanLine length]-1];
             }
+            [body appendString:cleanLine];
         } else {
             if ([line isEqual:@""]) {
                 hasHeaders = YES;
