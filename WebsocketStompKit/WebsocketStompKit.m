@@ -8,7 +8,7 @@
 //
 
 #import "WebsocketStompKit.h"
-#import "JFRWebSocket.h"
+#import "SocketRocket.h"
 
 #define kDefaultTimeout 5
 #define kVersion1_2 @"1.2"
@@ -16,18 +16,17 @@
 
 #define WSProtocols @[]//@[@"v10.stomp", @"v11.stomp"]
 
+#pragma mark -
 #pragma mark Logging macros
 
 #ifdef DEBUG // set to 1 to enable logs
-
-#define LogDebug(frmt, ...) NSLog(frmt, ##__VA_ARGS__);
-
+#define LogDebug(frmt, ...) NSLog(frmt, ## __VA_ARGS__);
 #else
-
 #define LogDebug(frmt, ...) {}
-
 #endif
 
+
+#pragma mark -
 #pragma mark Frame commands
 
 #define kCommandAbort       @"ABORT"
@@ -45,18 +44,21 @@
 #define kCommandSubscribe   @"SUBSCRIBE"
 #define kCommandUnsubscribe @"UNSUBSCRIBE"
 
+
+#pragma mark -
 #pragma mark Control characters
 
-#define	kLineFeed @"\x0A"
-#define	kNullChar @"\x00"
+#define kLineFeed @"\x0A"
+#define kNullChar @"\x00"
 #define kHeaderSeparator @":"
+
 
 #pragma mark -
 #pragma mark STOMP Client private interface
 
-@interface STOMPClient()
+@interface STOMPClient ()
 
-@property (nonatomic, retain) JFRWebSocket *socket;
+@property (nonatomic, retain) SRWebSocket *socket;
 @property (nonatomic, copy) NSURL *url;
 @property (nonatomic, copy) NSString *host;
 @property (nonatomic) NSString *clientHeartBeat;
@@ -69,57 +71,59 @@
 @property (nonatomic, copy) NSDictionary *connectFrameHeaders;
 @property (nonatomic, retain) NSMutableDictionary *subscriptions;
 
-- (void) sendFrameWithCommand:(NSString *)command
-                      headers:(NSDictionary *)headers
-                         body:(NSString *)body;
+- (void)sendFrameWithCommand:(NSString *)command headers:(NSDictionary *)headers body:(NSString *)body;
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Frame
 
-@interface STOMPFrame()
+@interface STOMPFrame ()
 
-- (id)initWithCommand:(NSString *)theCommand
-              headers:(NSDictionary *)theHeaders
-                 body:(NSString *)theBody;
-
+- (id)initWithCommand:(NSString *)theCommand headers:(NSDictionary *)theHeaders body:(NSString *)theBody;
 - (NSData *)toData;
 
 @end
+
 
 @implementation STOMPFrame
 
 @synthesize command, headers, body;
 
-- (id)initWithCommand:(NSString *)theCommand
-              headers:(NSDictionary *)theHeaders
-                 body:(NSString *)theBody {
-    if(self = [super init]) {
+- (id)initWithCommand:(NSString *)theCommand headers:(NSDictionary *)theHeaders body:(NSString *)theBody {
+    if (self = [super init]) {
         command = theCommand;
         headers = theHeaders;
         body = theBody;
     }
+
     return self;
 }
 
+
 - (NSString *)toString {
-    NSMutableString *frame = [NSMutableString stringWithString: [self.command stringByAppendingString:kLineFeed]];
+    NSMutableString *frame = [NSMutableString stringWithString:[self.command stringByAppendingString:kLineFeed]];
     for (id key in self.headers) {
         [frame appendString:[NSString stringWithFormat:@"%@%@%@%@", key, kHeaderSeparator, self.headers[key], kLineFeed]];
     }
+
     [frame appendString:kLineFeed];
     if (self.body) {
         [frame appendString:self.body];
     }
+
     [frame appendString:kNullChar];
     return frame;
 }
+
 
 - (NSData *)toData {
     return [[self toString] dataUsingEncoding:NSUTF8StringEncoding];
 }
 
-+ (STOMPFrame *) STOMPFrameFromData:(NSData *)data {
+
++ (STOMPFrame *)STOMPFrameFromData:(NSData *)data {
     NSData *strData = [data subdataWithRange:NSMakeRange(0, [data length])];
     NSString *msg = [[NSString alloc] initWithData:strData encoding:NSUTF8StringEncoding];
     LogDebug(@"<<< %@", msg);
@@ -127,23 +131,27 @@
     while ([contents count] > 0 && [contents[0] isEqual:@""]) {
         [contents removeObjectAtIndex:0];
     }
+
     NSString *command = [[contents objectAtIndex:0] copy];
     NSMutableDictionary *headers = [[NSMutableDictionary alloc] init];
     NSMutableString *body = [[NSMutableString alloc] init];
     BOOL hasHeaders = NO;
     [contents removeObjectAtIndex:0];
-    for(NSString *line in contents) {
-        if(hasHeaders) {
+    for (NSString *line in contents) {
+        if (hasHeaders) {
             NSString *cleanLine = [line copy];
             NSString *lastChar = [cleanLine substringFromIndex:[cleanLine length] - 1];
             if ([lastChar isEqualToString:@"\0"]) {
-                cleanLine = [cleanLine substringToIndex:[cleanLine length]-1];
+                cleanLine = [cleanLine substringToIndex:[cleanLine length] - 1];
             }
+
             [body appendString:cleanLine];
-        } else {
+        }
+        else {
             if ([line isEqual:@""]) {
                 hasHeaders = YES;
-            } else {
+            }
+            else {
                 NSMutableArray *parts = [NSMutableArray arrayWithArray:[line componentsSeparatedByString:kHeaderSeparator]];
                 // key ist the first part
                 NSString *key = parts[0];
@@ -152,104 +160,108 @@
             }
         }
     }
+
     return [[STOMPFrame alloc] initWithCommand:command headers:headers body:body];
 }
+
 
 - (NSString *)description {
     return [self toString];
 }
 
-
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Message
 
-@interface STOMPMessage()
+@interface STOMPMessage ()
 
 @property (nonatomic, retain) STOMPClient *client;
 
-+ (STOMPMessage *)STOMPMessageFromFrame:(STOMPFrame *)frame
-                                 client:(STOMPClient *)client;
++ (STOMPMessage *)STOMPMessageFromFrame:(STOMPFrame *)frame client:(STOMPClient *)client;
 
 @end
+
 
 @implementation STOMPMessage
 
 @synthesize client;
 
-- (id)initWithClient:(STOMPClient *)theClient
-             headers:(NSDictionary *)theHeaders
-                body:(NSString *)theBody {
-    if (self = [super initWithCommand:kCommandMessage
-                              headers:theHeaders
-                                 body:theBody]) {
+- (id)initWithClient:(STOMPClient *)theClient headers:(NSDictionary *)theHeaders body:(NSString *)theBody {
+    if (self = [super initWithCommand:kCommandMessage headers:theHeaders body:theBody]) {
         self.client = theClient;
     }
+
     return self;
 }
+
 
 - (void)ack {
     [self ackWithCommand:kCommandAck headers:nil];
 }
 
-- (void)ack: (NSDictionary *)theHeaders {
+
+- (void)ack:(NSDictionary *)theHeaders {
     [self ackWithCommand:kCommandAck headers:theHeaders];
 }
+
 
 - (void)nack {
     [self ackWithCommand:kCommandNack headers:nil];
 }
 
-- (void)nack: (NSDictionary *)theHeaders {
+
+- (void)nack:(NSDictionary *)theHeaders {
     [self ackWithCommand:kCommandNack headers:theHeaders];
 }
 
-- (void)ackWithCommand: (NSString *)command
-               headers: (NSDictionary *)theHeaders {
+
+- (void)ackWithCommand:(NSString *)command headers:(NSDictionary *)theHeaders {
     NSMutableDictionary *ackHeaders = [[NSMutableDictionary alloc] initWithDictionary:theHeaders];
     ackHeaders[kHeaderID] = self.headers[kHeaderAck];
-    [self.client sendFrameWithCommand:command
-                              headers:ackHeaders
-                                 body:nil];
+    [self.client sendFrameWithCommand:command headers:ackHeaders body:nil];
 }
 
-+ (STOMPMessage *)STOMPMessageFromFrame:(STOMPFrame *)frame
-                                 client:(STOMPClient *)client {
+
++ (STOMPMessage *)STOMPMessageFromFrame:(STOMPFrame *)frame client:(STOMPClient *)client {
     return [[STOMPMessage alloc] initWithClient:client headers:frame.headers body:frame.body];
 }
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Subscription
 
-@interface STOMPSubscription()
+@interface STOMPSubscription ()
 
 @property (nonatomic, retain) STOMPClient *client;
 
-- (id)initWithClient:(STOMPClient *)theClient
-          identifier:(NSString *)theIdentifier;
+- (id)initWithClient:(STOMPClient *)theClient identifier:(NSString *)theIdentifier;
 
 @end
+
 
 @implementation STOMPSubscription
 
 @synthesize client;
 @synthesize identifier;
 
-- (id)initWithClient:(STOMPClient *)theClient
-          identifier:(NSString *)theIdentifier {
-    if(self = [super init]) {
+- (id)initWithClient:(STOMPClient *)theClient identifier:(NSString *)theIdentifier {
+    if (self = [super init]) {
         self.client = theClient;
         identifier = [theIdentifier copy];
     }
+
     return self;
 }
 
+
 - (void)unsubscribe {
-    [self.client sendFrameWithCommand:kCommandUnsubscribe
-                              headers:@{kHeaderID: self.identifier}
-                                 body:nil];
+    [self.client sendFrameWithCommand:kCommandUnsubscribe headers:@{kHeaderID: self.identifier} body:nil];
 }
+
 
 - (NSString *)description {
     return [NSString stringWithFormat:@"<STOMPSubscription identifier:%@>", identifier];
@@ -257,41 +269,43 @@
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Transaction
 
-@interface STOMPTransaction()
+@interface STOMPTransaction ()
 
 @property (nonatomic, retain) STOMPClient *client;
 
-- (id)initWithClient:(STOMPClient *)theClient
-          identifier:(NSString *)theIdentifier;
+- (id)initWithClient:(STOMPClient *)theClient identifier:(NSString *)theIdentifier;
 
 @end
+
 
 @implementation STOMPTransaction
 
 @synthesize identifier;
 
 - (id)initWithClient:(STOMPClient *)theClient
-          identifier:(NSString *)theIdentifier {
-    if(self = [super init]) {
+    identifier:(NSString *)theIdentifier {
+    if (self = [super init]) {
         self.client = theClient;
         identifier = [theIdentifier copy];
     }
+
     return self;
 }
 
+
 - (void)commit {
-    [self.client sendFrameWithCommand:kCommandCommit
-                              headers:@{kHeaderTransaction: self.identifier}
-                                 body:nil];
+    [self.client sendFrameWithCommand:kCommandCommit headers:@{kHeaderTransaction: self.identifier} body:nil];
 }
 
+
 - (void)abort {
-    [self.client sendFrameWithCommand:kCommandAbort
-                              headers:@{kHeaderTransaction: self.identifier}
-                                 body:nil];
+    [self.client sendFrameWithCommand:kCommandAbort headers:@{kHeaderTransaction: self.identifier} body:nil];
 }
+
 
 - (NSString *)description {
     return [NSString stringWithFormat:@"<STOMPTransaction identifier:%@>", identifier];
@@ -299,6 +313,8 @@
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Client Implementation
 
 @implementation STOMPClient
@@ -313,21 +329,19 @@
 int idGenerator;
 CFAbsoluteTime serverActivity;
 
+
 #pragma mark -
 #pragma mark Public API
 
 - (id)initWithURL:(NSURL *)theUrl webSocketHeaders:(NSDictionary *)headers useHeartbeat:(BOOL)heart {
-    if(self = [super init]) {
-        self.socket = [[JFRWebSocket alloc] initWithURL:theUrl protocols:WSProtocols];
-        if (headers) {
-            for (NSString *key in headers.allKeys) {
-                [self.socket addHeader:[headers objectForKey:key] forKey:key];
-            }
-        }
+    if (self = [super init]) {
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:theUrl];
+        request.allHTTPHeaderFields = headers;
+        self.socket = [[SRWebSocket alloc] initWithURLRequest:request protocols:WSProtocols];
         self.socket.delegate = self;
-        
+
         self.heartbeat = heart;
-        
+
         self.url = theUrl;
         self.host = theUrl.host;
         idGenerator = 0;
@@ -335,126 +349,123 @@ CFAbsoluteTime serverActivity;
         self.subscriptions = [[NSMutableDictionary alloc] init];
         self.clientHeartBeat = @"5000,10000";
     }
+
     return self;
 }
 
-- (BOOL) heartbeatActivated {
+
+- (BOOL)heartbeatActivated {
     return heartbeat;
 }
 
-- (void)connectWithLogin:(NSString *)login
-                passcode:(NSString *)passcode
-       completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler {
-    [self connectWithHeaders:@{kHeaderLogin: login, kHeaderPasscode: passcode}
-           completionHandler:completionHandler];
+
+- (void)connectWithLogin:(NSString *)login passcode:(NSString *)passcode completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler {
+    [self connectWithHeaders:@{kHeaderLogin: login, kHeaderPasscode: passcode} completionHandler:completionHandler];
 }
 
-- (void)connectWithHeaders:(NSDictionary *)headers
-         completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler {
+
+- (void)connectWithHeaders:(NSDictionary *)headers completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler {
     self.connectFrameHeaders = headers;
     self.connectionCompletionHandler = completionHandler;
-    [self.socket connect];
+    [self.socket open];
 }
 
-- (void)sendTo:(NSString *)destination
-          body:(NSString *)body {
-    [self sendTo:destination
-         headers:nil
-            body:body];
+
+- (void)sendTo:(NSString *)destination body:(NSString *)body {
+    [self sendTo:destination headers:nil body:body];
 }
 
-- (void)sendTo:(NSString *)destination
-       headers:(NSDictionary *)headers
-          body:(NSString *)body {
+
+- (void)sendTo:(NSString *)destination headers:(NSDictionary *)headers body:(NSString *)body {
     NSMutableDictionary *msgHeaders = [NSMutableDictionary dictionaryWithDictionary:headers];
     msgHeaders[kHeaderDestination] = destination;
+    
     if (body) {
         NSData *bodyData = [body dataUsingEncoding:NSUTF8StringEncoding];
         msgHeaders[kHeaderContentLength] = [NSNumber numberWithLong:[bodyData length]];
     }
-    [self sendFrameWithCommand:kCommandSend
-                       headers:msgHeaders
-                          body:body];
+
+    [self sendFrameWithCommand:kCommandSend headers:msgHeaders body:body];
 }
 
-- (STOMPSubscription *)subscribeTo:(NSString *)destination
-                    messageHandler:(STOMPMessageHandler)handler {
-    return [self subscribeTo:destination
-                     headers:nil
-              messageHandler:handler];
+
+- (STOMPSubscription *)subscribeTo:(NSString *)destination messageHandler:(STOMPMessageHandler)handler {
+    return [self subscribeTo:destination headers:nil messageHandler:handler];
 }
 
-- (STOMPSubscription *)subscribeTo:(NSString *)destination
-                           headers:(NSDictionary *)headers
-                    messageHandler:(STOMPMessageHandler)handler {
+
+- (STOMPSubscription *)subscribeTo:(NSString *)destination headers:(NSDictionary *)headers messageHandler:(STOMPMessageHandler)handler {
     NSMutableDictionary *subHeaders = [[NSMutableDictionary alloc] initWithDictionary:headers];
     subHeaders[kHeaderDestination] = destination;
+    
     NSString *identifier = subHeaders[kHeaderID];
     if (!identifier) {
         identifier = destination;
         subHeaders[kHeaderID] = identifier;
     }
+
     self.subscriptions[identifier] = handler;
-    [self sendFrameWithCommand:kCommandSubscribe
-                       headers:subHeaders
-                          body:nil];
+    [self sendFrameWithCommand:kCommandSubscribe headers:subHeaders body:nil];
+    
     return [[STOMPSubscription alloc] initWithClient:self identifier:identifier];
 }
+
 
 - (STOMPTransaction *)begin {
     NSString *identifier = [NSString stringWithFormat:@"tx-%d", idGenerator++];
     return [self begin:identifier];
 }
 
+
 - (STOMPTransaction *)begin:(NSString *)identifier {
-    [self sendFrameWithCommand:kCommandBegin
-                       headers:@{kHeaderTransaction: identifier}
-                          body:nil];
+    [self sendFrameWithCommand:kCommandBegin headers:@{kHeaderTransaction: identifier} body:nil];
     return [[STOMPTransaction alloc] initWithClient:self identifier:identifier];
 }
 
+
 - (void)disconnect {
-    [self disconnect: nil];
+    [self disconnect:nil];
 }
+
 
 - (void)disconnect:(void (^)(NSError *error))completionHandler {
     self.disconnectedHandler = completionHandler;
-    [self sendFrameWithCommand:kCommandDisconnect
-                       headers:nil
-                          body:nil];
+    [self sendFrameWithCommand:kCommandDisconnect headers:nil body:nil];
     [self.subscriptions removeAllObjects];
     [self.pinger invalidate];
     [self.ponger invalidate];
-    [self.socket disconnect];
+    [self.socket close];
 }
 
 
 #pragma mark -
 #pragma mark Private Methods
 
-- (void)sendFrameWithCommand:(NSString *)command
-                     headers:(NSDictionary *)headers
-                        body:(NSString *)body {
-    if (![self.socket isConnected]) {
+- (void)sendFrameWithCommand:(NSString *)command headers:(NSDictionary *)headers body:(NSString *)body {
+    if (self.socket.readyState != SR_OPEN) {
         return;
     }
+
     STOMPFrame *frame = [[STOMPFrame alloc] initWithCommand:command headers:headers body:body];
     LogDebug(@">>> %@", frame);
-    [self.socket writeString:[frame toString]];
+    [self.socket send:[frame toString]];
 }
 
+
 - (void)sendPing:(NSTimer *)timer  {
-    if (![self.socket isConnected]) {
+    if (self.socket.readyState != SR_OPEN) {
         return;
     }
-    [self.socket writeData:[NSData dataWithBytes:"\x0A" length:1]];
+
+    [self.socket send:[NSData dataWithBytes:"\x0A" length:1]];
     LogDebug(@">>> PING");
 }
+
 
 - (void)checkPong:(NSTimer *)timer  {
     NSDictionary *dict = timer.userInfo;
     NSInteger ttl = [dict[@"ttl"] intValue];
-    
+
     CFAbsoluteTime delta = CFAbsoluteTimeGetCurrent() - serverActivity;
     if (delta > (ttl * 2)) {
         LogDebug(@"did not receive server activity for the last %f seconds", delta);
@@ -462,52 +473,44 @@ CFAbsoluteTime serverActivity;
     }
 }
 
-- (void)setupHeartBeatWithClient:(NSString *)clientValues
-                          server:(NSString *)serverValues {
+
+- (void)setupHeartBeatWithClient:(NSString *)clientValues server:(NSString *)serverValues {
     if (!heartbeat) {
         return;
     }
-    
+
     NSInteger cx, cy, sx, sy;
-    
+
     NSScanner *scanner = [NSScanner scannerWithString:clientValues];
     scanner.charactersToBeSkipped = [NSCharacterSet characterSetWithCharactersInString:@", "];
     [scanner scanInteger:&cx];
     [scanner scanInteger:&cy];
-    
+
     scanner = [NSScanner scannerWithString:serverValues];
     scanner.charactersToBeSkipped = [NSCharacterSet characterSetWithCharactersInString:@", "];
     [scanner scanInteger:&sx];
     [scanner scanInteger:&sy];
-    
+
     NSInteger pingTTL = ceil(MAX(cx, sy) / 1000);
     NSInteger pongTTL = ceil(MAX(sx, cy) / 1000);
-    
+
     LogDebug(@"send heart-beat every %ld seconds", pingTTL);
     LogDebug(@"expect to receive heart-beats every %ld seconds", pongTTL);
-    
+
     dispatch_async(dispatch_get_main_queue(), ^{
         if (pingTTL > 0) {
-            self.pinger = [NSTimer scheduledTimerWithTimeInterval: pingTTL
-                                                           target: self
-                                                         selector: @selector(sendPing:)
-                                                         userInfo: nil
-                                                          repeats: YES];
+            self.pinger = [NSTimer scheduledTimerWithTimeInterval:pingTTL target:self selector:@selector(sendPing:) userInfo:nil repeats:YES];
         }
         if (pongTTL > 0) {
-            self.ponger = [NSTimer scheduledTimerWithTimeInterval: pongTTL
-                                                           target: self
-                                                         selector: @selector(checkPong:)
-                                                         userInfo: @{@"ttl": [NSNumber numberWithInteger:pongTTL]}
-                                                          repeats: YES];
+            self.ponger = [NSTimer scheduledTimerWithTimeInterval:pongTTL target:self selector:@selector(checkPong:) userInfo:@{ @"ttl": [NSNumber numberWithInteger:pongTTL] } repeats:YES];
         }
     });
-    
 }
+
 
 - (void)receivedFrame:(STOMPFrame *)frame {
     // CONNECTED
-    if([kCommandConnected isEqual:frame.command]) {
+    if ([kCommandConnected isEqual:frame.command]) {
         self.connected = YES;
         [self setupHeartBeatWithClient:self.clientHeartBeat server:frame.headers[kHeaderHeartBeat]];
         if (self.connectionCompletionHandler) {
@@ -515,7 +518,8 @@ CFAbsoluteTime serverActivity;
         }
 
     // MESSAGE
-    } else if([kCommandMessage isEqual:frame.command]) {
+    }
+    else if ([kCommandMessage isEqual:frame.command]) {
         STOMPMessageHandler handler = self.subscriptions[frame.headers[kHeaderSubscription]];
         if (!handler) {
             handler = defaultMessageHandler;
@@ -527,68 +531,65 @@ CFAbsoluteTime serverActivity;
         }
 
     // RECEIPT
-    } else if([kCommandReceipt isEqual:frame.command]) {
+    }
+    else if ([kCommandReceipt isEqual:frame.command]) {
         if (self.receiptHandler) {
             self.receiptHandler(frame);
         }
 
     // ERROR
-    } else if([kCommandError isEqual:frame.command]) {
+    }
+    else if ([kCommandError isEqual:frame.command]) {
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit" code:1 userInfo:@{@"frame": frame}];
         // ERROR coming after the CONNECT frame
         if (!self.connected && self.connectionCompletionHandler) {
             self.connectionCompletionHandler(frame, error);
-        } else if (self.errorHandler) {
+        }
+        else if (self.errorHandler) {
             self.errorHandler(error);
-        } else {
+        }
+        else {
             LogDebug(@"Unhandled ERROR frame: %@", frame);
         }
-    } else {
-        NSError *error = [[NSError alloc] initWithDomain:@"StompKit"
-                                                    code:2
-                                                userInfo:@{@"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command],
-                                                           @"frame": frame ? frame : @"<nil>"}];
+    }
+    else {
+        NSError *error = [[NSError alloc] initWithDomain:@"StompKit" code:2 userInfo:@{
+            @"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command],
+            @"frame": frame ? frame : @"<nil>"
+        }];
+        
         if (self.errorHandler) {
             self.errorHandler(error);
         }
     }
 }
 
-#pragma mark -
-#pragma mark JetfireDelegate
 
-- (void) websocketDidConnect:(JFRWebSocket*) socket {
-    
+#pragma mark -
+#pragma mark SocketRocket delegate
+
+- (void)webSocketDidOpen:(SRWebSocket *)webSocket {
     // Websocket has connected, send the STOMP connection frame
     NSMutableDictionary *connectHeaders = [[NSMutableDictionary alloc] initWithDictionary:connectFrameHeaders];
     connectHeaders[kHeaderAcceptVersion] = kVersion1_2;
     if (!connectHeaders[kHeaderHost]) {
         connectHeaders[kHeaderHost] = host;
     }
+
     if (!connectHeaders[kHeaderHeartBeat]) {
         connectHeaders[kHeaderHeartBeat] = self.clientHeartBeat;
-    } else {
+    }
+    else {
         self.clientHeartBeat = connectHeaders[kHeaderHeartBeat];
     }
-    
-    [self sendFrameWithCommand:kCommandConnect
-                       headers:connectHeaders
-                          body: nil];
-    
+
+    [self sendFrameWithCommand:kCommandConnect headers:connectHeaders body:nil];
 }
 
-// BINARY FRAMES!
-// Should never be used for STOMP as STOMP is a text based protocol.
-// However, STOMPKit can handle binary data so no harm in leaving this here
-- (void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data {
-    serverActivity = CFAbsoluteTimeGetCurrent();
-    STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:data];
-    [self receivedFrame:frame];
-}
 
 // TEXT FRAMES!
 // This is where all the goodness should arrive
-- (void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString *)string {
+- (void)webSocket:(SRWebSocket *)webSocket didReceiveMessageWithString:(NSString *)string {
     NSString *cleanedString = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (cleanedString && ![cleanedString isEqualToString:@""]) {
         serverActivity = CFAbsoluteTimeGetCurrent();
@@ -597,22 +598,55 @@ CFAbsoluteTime serverActivity;
     }
 }
 
-- (void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
-    LogDebug(@"socket did disconnect, error: %@", error);
+
+// BINARY FRAMES!
+// Should never be used for STOMP as STOMP is a text based protocol.
+// However, STOMPKit can handle binary data so no harm in leaving this here
+- (void)webSocket:(SRWebSocket *)webSocket didReceiveMessageWithData:(NSData *)data {
+    serverActivity = CFAbsoluteTimeGetCurrent();
+    STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:data];
+    [self receivedFrame:frame];
+}
+
+
+- (void)webSocket:(SRWebSocket *)webSocket didFailWithError:(NSError *)error {
+    LogDebug(@"socket did fail, error: %@", error);
+    [self handleError:error];
+}
+
+
+- (void)webSocket:(SRWebSocket *)webSocket didCloseWithCode:(NSInteger)code reason:(nullable NSString *)reason wasClean:(BOOL)wasClean {
+    LogDebug(@"socket did disconnect, code: %li, reason: %@", code, reason);
+
+    NSDictionary *userInfo = nil;
+    if (reason) {
+        userInfo = @{NSLocalizedFailureReasonErrorKey: reason};
+    }
+    NSError *error = [[NSError alloc] initWithDomain:@"WebsocketStompKit" code:code userInfo:userInfo];
+
+    [self handleError:error];
+}
+
+
+- (void)handleError:(NSError *)error {
     if (!self.connected && self.connectionCompletionHandler) {
         self.connectionCompletionHandler(nil, error);
-    } else if (self.connected) {
+    }
+    else if (self.connected) {
         if (self.disconnectedHandler) {
             self.disconnectedHandler(error);
-        } else if (self.errorHandler && error) {
+        }
+        else if (self.errorHandler && error) {
             self.errorHandler(error);
         }
     }
+
     self.connected = NO;
-    
+
     if (self.delegate != nil && [self.delegate respondsToSelector:@selector(websocketDidDisconnect:)]) {
         [self.delegate websocketDidDisconnect:error];
     }
 }
+
 
 @end

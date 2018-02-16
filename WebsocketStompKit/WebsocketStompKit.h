@@ -9,6 +9,7 @@
 
 #import <Foundation/Foundation.h>
 
+#pragma mark -
 #pragma mark Frame headers
 
 #define kHeaderAcceptVersion @"accept-version"
@@ -27,6 +28,8 @@
 #define kHeaderSubscription  @"subscription"
 #define kHeaderTransaction   @"transaction"
 
+
+#pragma mark -
 #pragma mark Ack Header Values
 
 #define kAckAuto             @"auto"
@@ -39,6 +42,8 @@
 typedef void (^STOMPFrameHandler)(STOMPFrame *frame);
 typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
+
+#pragma mark -
 #pragma mark STOMP Frame
 
 @interface STOMPFrame : NSObject
@@ -49,6 +54,8 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Message
 
 @interface STOMPMessage : STOMPFrame
@@ -60,6 +67,8 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Subscription
 
 @interface STOMPSubscription : NSObject
@@ -70,6 +79,8 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Transaction
 
 @interface STOMPTransaction : NSObject
@@ -82,11 +93,14 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 @end
 
 @protocol STOMPClientDelegate
-
 @optional
+
 - (void) websocketDidDisconnect: (NSError *)error;
+
 @end
 
+
+#pragma mark -
 #pragma mark STOMP Client
 
 @interface STOMPClient : NSObject
@@ -101,23 +115,14 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 - (id)initWithURL:(NSURL *)theUrl webSocketHeaders:(NSDictionary *)headers useHeartbeat:(BOOL)heartbeat;
 
-- (void)connectWithLogin:(NSString *)login
-                passcode:(NSString *)passcode
-       completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
-- (void)connectWithHeaders:(NSDictionary *)headers
-         completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
+- (void)connectWithLogin:(NSString *)login passcode:(NSString *)passcode completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
+- (void)connectWithHeaders:(NSDictionary *)headers completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
 
-- (void)sendTo:(NSString *)destination
-          body:(NSString *)body;
-- (void)sendTo:(NSString *)destination
-       headers:(NSDictionary *)headers
-          body:(NSString *)body;
+- (void)sendTo:(NSString *)destination body:(NSString *)body;
+- (void)sendTo:(NSString *)destination headers:(NSDictionary *)headers body:(NSString *)body;
 
-- (STOMPSubscription *)subscribeTo:(NSString *)destination
-                    messageHandler:(STOMPMessageHandler)handler;
-- (STOMPSubscription *)subscribeTo:(NSString *)destination
-                           headers:(NSDictionary *)headers
-                    messageHandler:(STOMPMessageHandler)handler;
+- (STOMPSubscription *)subscribeTo:(NSString *)destination messageHandler:(STOMPMessageHandler)handler;
+- (STOMPSubscription *)subscribeTo:(NSString *)destination headers:(NSDictionary *)headers messageHandler:(STOMPMessageHandler)handler;
 
 - (STOMPTransaction *)begin;
 - (STOMPTransaction *)begin:(NSString *)identifier;
@@ -126,3 +131,4 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 - (void)disconnect:(void (^)(NSError *error))completionHandler;
 
 @end
+
